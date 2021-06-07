@@ -2,47 +2,47 @@
 '''
 This provides a dog / cat detection application running an a raspberry pi with a "Raspberry Pi High Quality Camera",
 https://www.raspberrypi.org/products/raspberry-pi-high-quality-camera/ and a Arducam wide anlge (6mm) lens,
-https://www.amazon.com/gp/product/B088GWZPL1/.  This application uses the SSD Mobilnet V2 Single-Shot multibox
-Detection (SSD) neural network targeting mobile applications, running on OpenCV.  V3 was available during
+https://www.amazon.com/gp/product/B088GWZPL1/. This application uses the SSD Mobilnet V2 Single-Shot multibox
+Detection (SSD) neural network targeting mobile applications, running on OpenCV. V3 was available during
 development; however, there appeared to be incompatibility between the .pbtxt definitions and OpenCVs
-implementation and was not adopted.  The goal of the system is as quickly as possible detect the presence
+implementation and was not adopted. The goal of the system is as quickly as possible detect the presence
 of a dog in our front yard, typically on or near the sidewalk and send a notification to a separate system
 on the same subnet.
 
 This also sends SMS notifications (without a SMS service) for free when a dog has been detected and sends an
-email with the detection image including the classification regions and their confidence scores.  Targeting a
+email with the detection image including the classification regions and their confidence scores. Targeting a
 rPi4, the system uses threading to both maximize the recognition frame rate and avoid messaging and network
-delays from impacting the frame rate.  To maximize the frame rate, a digitally locked loop is implemented
+delays from impacting the frame rate. To maximize the frame rate, a digitally locked loop is implemented
 where delays are inserted following processing of a frame (in a thread - called a phase in this image) to match
-the average delay of the system.  In each phase a captured image runs in its own thread through the object
+the average delay of the system. In each phase a captured image runs in its own thread through the object
 classification (the single largest CPU hog), such that multiple images have object classification running in
 parallel, the results for a phase are dequeued immediately after kicking off the phase + NUMBER_OF_PHASES-1.
-The rPi4 has four cores so there is no value in exceeding four phases.  In addition the neural net is IO
-limited, so there is diminishing gains in increasing the number of PHASES beyond 3.  The software is configured
+The rPi4 has four cores so there is no value in exceeding four phases. In addition the neural net is IO
+limited, so there is diminishing gains in increasing the number of PHASES beyond 3. The software is configured
 to support arbitrary number of phases, so this can be configured based upon any changes ot the hardware.
 
-The camera's viewport has a very wide aspect ratio, reflecting the visual region of interest.  The neural net
+The camera's viewport has a very wide aspect ratio, reflecting the visual region of interest. The neural net
 is designed around a 1:1 aspect ratio and is tolerant to some variance in aspect ratio, but demonstrated
-significant degradation for an aspect ratio of 10:3.  To maximize accuracy motion detection is applied to the
+significant degradation for an aspect ratio of 10:3. To maximize accuracy motion detection is applied to the
 image and the object recognition is run on a 1:1 portion (IMAGE_HEIGHT x IMAGE_HEIGHT) centered on the motions
-centroid.  As configured the system has a frame rate of ~2.1 fps.
+centroid. As configured the system has a frame rate of ~2.1 fps.
 
-When running all four cores are typically in the mid 90s% load, so some form of cooling is needed.  Given
+When running all four cores are typically in the mid 90s% load, so some form of cooling is needed. Given
 the system is running indoors I chose to go with passive cooling and found the Geekworm Raspberry Pi 4 Case,
-https://www.amazon.com/gp/product/B07X5Y81C6/ to be very effective.  Unfortunately for my application WiFi
+https://www.amazon.com/gp/product/B07X5Y81C6/ to be very effective. Unfortunately for my application WiFi
 range is important and this case places a large block of Aluminum around the antenna, so I had to modify
-the case to create a cutout in the top side metal around the antennas.  Peak memory usage is around 3GB so
-the 4GB rPi4 would be sufficient.  The application expects a RAM disk to be setup, @ /var/ramdisk/, to store
-a cyclical list of captured images.  This is done to 1) avoid wear on the SD card - SD card writes have a
+the case to create a cutout in the top side metal around the antennas. Peak memory usage is around 3GB so
+the 4GB rPi4 would be sufficient. The application expects a RAM disk to be setup, @ /var/ramdisk/, to store
+a cyclical list of captured images. This is done to 1) avoid wear on the SD card - SD card writes have a
 real impact on the operating life and 2) improve the speed performance when most needed.
 
 Given the raised operating temperature of the system a night mode has been implemented to lower the
-power consumption when the image is too poorly illuminated to be useful.  The digital lock loop slows
+power consumption when the image is too poorly illuminated to be useful. The digital lock loop slows
 down by a factor of ~120 in this mode with the goal of preserving energy and extending the life of the
 system (heat has an exponential impact on lifespan in almost everything, electronics included).
 
-This application will send an SMS message without requiring a service to do so.  Most (if not all cellular
-providers provide an e-mail address to address text messages.  For the common us carriers here is the
+This application will send an SMS message without requiring a service to do so. Most (if not all cellular
+providers provide an e-mail address to address text messages. For the common us carriers here is the
 address syntax:
 
 Sprint      phonenumber@messaging.sprintpcs.com
@@ -51,25 +51,25 @@ T-Mobile	phonenumber@tmomail.net
 AT&T	    phonenumber@txt.att.net
 
 This solution is intended to run stand alone indefinitely and uses the watchdog driver which provides
-an interface to the Broadcom's watchdog timer.  Unfortunately, when the original Desbian watchdog solution was
+an interface to the Broadcom's watchdog timer. Unfortunately, when the original Desbian watchdog solution was
 implemented the authors created a daemon which would monitor other processes within the system and take
 responsibility for either petting a HW watchdog or maintaining a SW monitor in lieu of one, this software was
-also named watchdog.  So now configurations for the watchdog all start with WATCHDOG and it is not all obvious
-how one tells the configurations apart.  Only one SW instance is allowed to connect to the drive at a time, so
-if the daemon "SW watchdog" is enabled that is your only option.  This program directly interacts with the
-watchdog driver.  For this to work the watchdog can not be started at the system level.  System level watchdogs
+also named watchdog. So now configurations for the watchdog all start with WATCHDOG and it is not all obvious
+how one tells the configurations apart. Only one SW instance is allowed to connect to the drive at a time, so
+if the daemon "SW watchdog" is enabled that is your only option. This program directly interacts with the
+watchdog driver. For this to work the watchdog can not be started at the system level. System level watchdogs
 are typically setup to monitor the process IDs of critical infrastructure and can be pointed at process IDs for
 a particular application; however, with a multi-threaded application which is adding and deleting threads this
-complex at least.  This application as an alternative owns the watchdog function and monitors that the critical
+complex at least. This application as an alternative owns the watchdog function and monitors that the critical
 thread(s) remain operating with the assumption that if the critical infrastructure relative to the application
-fails the application will fail with it.  The watchdog implementation is such that the watchdog is not enabled
-until the application reads the ENABLE_WATCHDOG parameter from a configuration file.  When it does so it writes
-a working configuration file to the RAMDISK to allow remote determination of the configuration state.  The
+fails the application will fail with it. The watchdog implementation is such that the watchdog is not enabled
+until the application reads the ENABLE_WATCHDOG parameter from a configuration file. When it does so it writes
+a working configuration file to the RAMDISK to allow remote determination of the configuration state. The
 configuration file provides a safety measure for disabling the watchdog, as deleting or renaming the config
 file will disable the watchdog the next time the application is started.
 
 To start the application following either a loss of power, including a watchdog event, a systemd service is
-created.  See instructions in DogDetect_README.txt for installation, enabling and disabling the service.
+created. See instructions in DogDetect_README.txt for installation, enabling and disabling the service.
 '''
 
 
@@ -94,17 +94,18 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from mscoco_label_map import category_map, category_index
 '''
-Imports from private are constants that need to be created for a specific userID.  You may also wish
-to change the constant name GORDONS_EMAIL (unless your name is Gordon ;).  For obvious reasons private.py
+Imports from private are constants that need to be created for a specific userID. You may also wish
+to change the constant name EMAIL_TO. For obvious reasons private.py
 is not included in the repo.
 '''
 from private import SUDO_PASSWORD as SUDO_PASSWORD  # Sudo password needed to pet the watchdog
+from private import SMTP_SERVER as SMTP_SERVER
 from private import SENDER_EMAIL as SENDER_EMAIL    # E-mail account to use for sending e-mail notifications
 from private import PASSWORD as PASSWORD            # Password for email acount to send notificaitons
-from private import GORDONS_EMAIL as GORDONS_EMAIL  # Recipient email address
+from private import EMAIL_TO as EMAIL_TO  # Recipient email address
 ''' Recipient's cell phone numbers e-mail address
 NOTE: You can e-mail a text message to a cell phone at no cost, at least for the major carriers in the US.
-Each carrier has it's own format for the e-mail address as shown in the following example:
+Each carrier has its own format for the e-mail address as shown in the following example:
 
 Provider	Format		                            Example Number: 4081234567
 ======================================================================================
@@ -116,7 +117,7 @@ AT&T	    phonenumber@txt.att.net	            	4081234567@txt.att.net
 The repository hosting this file will include an excel spreadsheet which generates the e-mail addresses 
 from the 10-digit number.
 '''
-from private import GORDONS_CELL as GORDONS_CELL    # Recipient's cell phone numbers e-mail address
+#from private import MOBILE_PHONE as MOBILE_PHONE    # Recipient's cell phone numbers e-mail address
 
 DEBUG      = False
 DISPLAY_ON = False
@@ -139,13 +140,13 @@ args = parser.parse_args()
 '''
 To ensure we can quickly turn off the watch dog mode should an issue be introduced, the 
 watchdog petting, which enables the watchdog the first time it is performed, must be 
-enabled by the presense of the ENABLE_WATCHDOG flag being set to 1.  Moving or deleting
+enabled by the presense of the ENABLE_WATCHDOG flag being set to 1. Moving or deleting
 the config file will prevent the watdog from being run the next time the script is called.
 This is useful to be able to disable the watchdog and then take the execution out of 
 service mode.
 '''
 WATCH_DOG_ENABLE       = False
-CONFIG_FILE            = "/home/pi/Software/Python/DogDetect2/sc_config.txt"
+CONFIG_FILE            = "/home/pi/Software/Python/DogDetect2/DogDetect/sc_config.txt"
 if os.path.isfile(CONFIG_FILE):
     workingConfigFile = open(RAM_DISK + 'working_config.txt', "w")
     with open(CONFIG_FILE) as configFile:
@@ -162,7 +163,7 @@ WATCH_DOG_PET_INTERVAL = 5 # Watch Dog Petting interval (must be less than 15 se
 keepAlive              = 0
 
 SSL_PORT          = 465  # For SSL
-GMAIL_SMTP_SERVER = "smtp.gmail.com"
+
 
 CYAN  = (255, 255, 0)
 RED   = (0,   0,   255)
@@ -192,11 +193,11 @@ NIGHT_MODE_FRAME_SLOWDOWN = 60
 #### Initialize NN model ####
 
 # Name of the directory containing the object detection module we're using
-PATH_TO_PROTO_BINARY = "/home/pi/Software/Python/DogDetect2/ssd_mobilenet_v2_frozen_inference_graph.pb"
-PATH_TO_PROTO_TEXT   = "/home/pi/Software/Python/DogDetect2/ssd_mobilenet_v2_coco_2018_03_29.pbtxt"
+PATH_TO_PROTO_BINARY = "/home/pi/Software/Python/DogDetect2/DogDetect/ssd_mobilenet_v2_frozen_inference_graph.pb"
+PATH_TO_PROTO_TEXT   = "/home/pi/Software/Python/DogDetect2/DogDetect/ssd_mobilenet_v2_coco_2018_03_29.pbtxt"
 V2_BLOB_SIZE         = 300
-#PATH_TO_PROTO_BINARY = "/home/pi/Software/Python/DogDetect2/ssd_mobilenet_v3_frozen_inference_graph.pb"
-#PATH_TO_PROTO_TEXT   = "/home/pi/Software/Python/DogDetect2/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
+#PATH_TO_PROTO_BINARY = "/home/pi/Software/Python/DogDetect2/DogDetect/ssd_mobilenet_v3_frozen_inference_graph.pb"
+#PATH_TO_PROTO_TEXT   = "/home/pi/Software/Python/DogDetect2/DogDetect/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
 V3_BLOB_SIZE         = 320
 
 BLOB_SIZE = V2_BLOB_SIZE
@@ -244,7 +245,7 @@ def sendTextMessage(messageSubject, messageText, recipient):
               + messageText
 
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(GMAIL_SMTP_SERVER, SSL_PORT, context=context) as server:
+    with smtplib.SMTP_SSL(SMTP_SERVER, SSL_PORT, context=context) as server:
         server.login(SENDER_EMAIL, PASSWORD)
         server.sendmail(SENDER_EMAIL, recipient, message)
     print("Message Sent")
@@ -303,7 +304,7 @@ def sendEmailWithImage(image, subject, message_text, recipient):
                                          cid=image_cid)
     text = msg.as_string()
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(GMAIL_SMTP_SERVER, SSL_PORT, context=context) as server:
+    with smtplib.SMTP_SSL(SMTP_SERVER, SSL_PORT, context=context) as server:
         server.login(SENDER_EMAIL, PASSWORD)
         server.sendmail(SENDER_EMAIL, recipient, text)
     print("Email Sent")
@@ -342,11 +343,11 @@ def turnOnSprinklers():
         if i == MAX_TCP_RETRIES - 1:
             messageSubject = f"Failed to connect with sprinkler after {MAX_TCP_RETRIES} attempts."
             messageText    = f'There is a dog in the front yard! {currentTime.strftime("%x %I:%M:%S %p")}'
-            try:
-                sendFailureNotice = Thread(target= sendTextMessage, args=(messageSubject, messageText, GORDONS_CELL))
-                sendFailureNotice.start()
-            except:
-                print("Error: unable to start sendFailureNotice thread")
+            #try:
+                #sendFailureNotice = Thread(target= sendTextMessage, args=(messageSubject, messageText, MOBILE_PHONE))
+                #sendFailureNotice.start()
+            #except:
+                #print("Error: unable to start sendFailureNotice thread")
 
 
 def notify(messageSubject, messageText, frame):
@@ -356,22 +357,22 @@ def notify(messageSubject, messageText, frame):
     Returns:
         Nothing
     '''
-    sendTextMessage(messageSubject, messageText, GORDONS_CELL)
+    #sendTextMessage(messageSubject, messageText, MOBILE_PHONE)
     cv2.imwrite(IMAGE_FILE, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    sendEmailWithImage(IMAGE_FILE, messageSubject, messageText, GORDONS_EMAIL)
+    sendEmailWithImage(IMAGE_FILE, messageSubject, messageText, EMAIL_TO)
 
 
 def object_detector(frame, cvNet):
     '''
     This function detects motion then crops the image to the center of the motion prior to running the 
-    object recognition neural net.  Object recognition performs best when the provided image has a 1:1
-    aspect ratio.  The region of interest has been trimmed at the camera interface in the vertical 
+    object recognition neural net. Object recognition performs best when the provided image has a 1:1
+    aspect ratio. The region of interest has been trimmed at the camera interface in the vertical 
     dimension, so the fraction of the image used for object recognition is of the dimension 
     IMAGE_HEIGHT x IMAGE_HEIGHT. 
 
     Args:
         image (frame): image captured from camera
-        cvNet (cv2 NN): object dectecition trained neural network 
+        cvNet (cv2 NN): object dectection trained neural network 
 
     Returns:
         Nothing
@@ -489,18 +490,18 @@ def object_detector(frame, cvNet):
         if (catOrDogSeen - imageLastSent) > TIME_BETWEEN_MESSAGES * freq:
             print("Sending Message")
 
-            try:
-                sprinklerThread = Thread(target= turnOnSprinklers)
-                sprinklerThread.start()
-            except:
-                print("Error: unable to start sprinkler thread")
+            # try:
+            #     sprinklerThread = Thread(target= turnOnSprinklers)
+            #     sprinklerThread.start()
+            # except:
+            #     print("Error: unable to start sprinkler thread")
 
             imageLastSent = catOrDogSeen
             
             messageSubject = f"{messageObject} Detected"
 
             currentRealTime = datetime.datetime.now()
-            messageText = f'There is a {messageObject} in the front yard! {currentRealTime.strftime("%x %I:%M:%S %p")}'
+            messageText = f'There is a {messageObject.lower()} on the lawn! At {currentRealTime.strftime("%H:%M %a %d %b")}'
 
             try:
                 sendNotice = Thread(target= notify, args=(messageSubject, messageText, frame))
@@ -529,15 +530,15 @@ def object_detector(frame, cvNet):
 
 def watchDogPetter():
     ''' 
-    watchDogPetter is a true watchdog in the embedded sense.  The use of watchdogs in Linux operating systems
-    takes on a different context and purpose.  In Linux severs the overriding purpose of the watchdog is to 
-    prevent bricking of the server itself.  As a result the watchdog has been created so that critical processes
+    watchDogPetter is a true watchdog in the embedded sense. The use of watchdogs in Linux operating systems
+    takes on a different context and purpose. In Linux severs the overriding purpose of the watchdog is to 
+    prevent bricking of the server itself. As a result the watchdog has been created so that critical processes
     such as network communication are monitored and the system is hard reset if those services cease to operate.
     Verifying operation via process ID is not effective for a multithreaded application, such as this one where 
-    individual threads within the application need to be monitored.  As a result the hardware watchdog is called 
-    through the watchdog driver.  Via an os call.  This is the same hardware which is called through the watchdog
+    individual threads within the application need to be monitored. As a result the hardware watchdog is called 
+    through the watchdog driver. Via an os call. This is the same hardware which is called through the watchdog
     deamon (very unfortunately named watchdog as there is namespace colissions between the configuration of the 
-    deamon and the driver, for which I have not found a definitive reference).  This implimentation does not 
+    deamon and the driver, for which I have not found a definitive reference). This implimentation does not 
     invoke the watchdog deamon as the hardware does not support competeing resources controlling the hardware.
     WARNING:  Be very careful to understand any changes made to the configuration of the driver and accidentally
     invoking the watchdog deamon as this will prevent this thread from operating.
@@ -614,7 +615,7 @@ for frame1 in camera.capture_continuous(rawCapture, format="bgr", use_video_port
     phaseFrame[phase].setflags(write=1)
 
     # Dark frames are detected to determine when to slow down the system as once the 
-    # images are dark enough, the object detection will not work.  This allows the 
+    # images are dark enough, the object detection will not work. This allows the 
     # system to reduce power consumption and should extend the life of the Pi versus
     # running it hot 100% of the time.
     darkDetectFrame = imutils.resize(phaseFrame[phase], width=int(IM_WIDTH / 32))
